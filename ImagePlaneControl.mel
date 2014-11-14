@@ -1,0 +1,357 @@
+global proc iplaner()
+{
+  global string $currentModelPanel;
+  global string $currentCamera;
+  global string $currentImagePlanes[];
+  global float $stepSize;
+	
+	if (`window -ex iplanerWindow`)
+	deleteUI iplanerWindow;
+	
+	window -s 0 -title "Image Plane Pan and Zoom Control" iplanerWindow;
+	
+	columnLayout;
+	string $controls_tabs = `tabLayout -changeCommand "getCurrentOperators(); backtrackSliders($currentCamera);"`;
+	string $controls_tabs_child1 = `columnLayout`;
+		rowLayout -nc 8;
+		separator -w 18 -style "none";
+			columnLayout;
+				button -label "Left" -w 60 -h 40 -command "moveImagePlaneStep(2)";
+				setParent ..;
+			
+			columnLayout;
+				button -label "Up" -w 60 -h 40 -command "moveImagePlaneStep(0)";
+				button -label "Zoom In" -w 60 -h 20 -command "moveImagePlaneStep(4)";
+				button -label "Zoom Out" -w 60 -h 20 -command "moveImagePlaneStep(5)";
+				button -label "Down" -w 60 -h 40 -command "moveImagePlaneStep(1)";
+				setParent ..;
+			
+			columnLayout;
+				button -label "Right" -w 60 -h 40 -command "moveImagePlaneStep(3)";
+				setParent ..;
+			
+			separator -hr 0 -width 40 -height 120 -style "singleDash";
+			
+			columnLayout;
+				text -label "Step Size";
+				
+				string $rc;
+				string $rb[];
+				$rc = `radioCollection`;
+				$rb[1] = `radioButton -label "10" -onCommand "$stepSize = 10"`;
+				$rb[2] = `radioButton -label "1" -onCommand "$stepSize = 1"`;
+				$rb[3] = `radioButton -label ".1" -onCommand "$stepSize = .1"`;
+				$rb[4] = `radioButton -label ".01" -onCommand "$stepSize = .01"`;
+				$rb[5] = `radioButton -label ".001" -onCommand "$stepSize = .001"`;
+				
+				radioCollection -edit -select $rb[4] $rc;
+				setParent ..;
+				
+			separator -hr 0 -width 40 -height 120 -style "singleDash";
+			
+			columnLayout;
+				button -label "Reset Horizontal" -w 100 -h 34 -command "resetImagePlaneValue(0)";
+				separator -h 9 -style "none";
+				button -label "Reset Vertical" -w 100 -h 34 -command "resetImagePlaneValue(1)";
+				separator -h 9 -style "none";
+				button -label "Reset Zoom" -w 100 -h 34 -command "resetImagePlaneValue(2)";
+				setParent ..;
+				
+			setParent ..;
+		setParent ..;
+
+	string $controls_tabs_child2 = `columnLayout`;
+	separator -h 6;
+		columnLayout;
+			rowLayout -nc 2;
+				floatSliderGrp -h 30 -cw3 50 50 300 -field 1 -pre 3 -min -2 -max 2 -fieldMinValue -100 -fieldMaxValue 100 -value 0 -label "Horizontal" -changeCommand "moveImagePlaneSlider(0)" -dragCommand "moveImagePlaneSlider(0)" horizontalSlider;
+				button -w 48 -label "Reset" -command "resetImagePlaneValue(0)";
+				setParent ..;
+				
+			rowLayout -nc 2;
+				floatSliderGrp -h 30 -cw3 50 50 300  -field 1 -pre 3 -min -2 -max 2 -fieldMinValue -100 -fieldMaxValue 100 -value 0 -label "Vertical" -changeCommand "moveImagePlaneSlider(1)" -dragCommand "moveImagePlaneSlider(1)" verticalSlider;
+				button -w 48 -label "Reset" -command "resetImagePlaneValue(1)";
+				setParent ..;
+				
+			rowLayout -nc 2;
+				floatSliderGrp -h 30 -cw3 50 50 300  -field 1 -pre 3 -min .001 -max 3 -fieldMinValue .001 -fieldMaxValue 10 -value 1 -label "Zoom" -changeCommand "moveImagePlaneSlider(2)" -dragCommand "moveImagePlaneSlider(2)" zoomSlider;
+				button -w 48 -label "Reset" -command "resetImagePlaneValue(2)";
+				setParent ..;
+			setParent ..;
+		setParent ..;
+	setParent ..;
+
+	tabLayout -edit -tabLabel $controls_tabs_child2 "Sliders" -tabLabel $controls_tabs_child1 "Buttons" $controls_tabs;
+	
+	separator -h 2;
+	floatSliderGrp -h 30 -cw3 50 50 360  -field 1 -pre 3 -min 0 -max 1 -value 1 -label "Opacity" -changeCommand "opacitySliderUpdate()" -dragCommand "opacitySliderUpdate()" opacitySlider;
+	
+	button -w 480 -h 30 -label "Reset Values" -command "resetImagePlaneValue(4)";
+	
+	getCurrentOperators();
+
+	showWindow iplanerWindow;
+};
+
+global proc int getCurrentOperators()
+{
+  global string $currentModelPanel;
+  global string $currentCamera;
+  global string $currentImagePlanes[];
+  string $camera;
+
+  //print("Current Operators called\n");
+  // First get the panel that currently has focus
+  string $panel = `getPanel -wf`;
+  //print("Focused Panel: " + $panel + "\n");
+
+  // Compare the panel's type to confirm it is a "modelPanel"
+  if ( "modelPanel" == `getPanel -to $panel` )
+  {
+    // If it is, store it in the global variable, because this is the one we'll be operating on from now on, until we re-run this script and return a new value
+    $currentModelPanel = $panel;
+    
+    // Get the name of the camera using the ‘modelEditor’ command
+    $camera = `modelEditor -q -camera $panel`;
+    string $nt = `nodeType $camera`;
+    //print ("Camera found: " + $camera + "\n" + "--Node type: " + `nodeType $camera` + "\n");
+
+    if($nt == "transform" || $nt == "camera")
+        {
+	//print("Found camera of some sort\n");
+	if ($nt == "transform")
+	        {
+		//print("Found transform node, finding camera…\n");
+		 string $c[] = `listRelatives -c $camera`;
+        	 if (`nodeType $c[0]` == "camera")
+	 	       {
+        	       $currentCamera = $c[0];
+         	       //print ("Model Panel: " + $currentModelPanel + "\nCamera: " + $currentCamera + "\n");
+
+          	       string $i[] = `listConnections -type imagePlane $currentCamera`;
+	   	       if (size($i) > 0)
+            			{
+				$currentImagePlanes = $i;
+				//print("-Image Planes Found-\n");
+				string $j;
+				//for ($j in $currentImagePlanes)
+				//print ("--" + $j + "\n");
+				return 1;
+           	    	    	}
+	   			else
+				{
+			      //print("No image planes found for camera\n");
+				return 0;
+				}
+	    	         }
+		}
+	if ($nt == "camera")
+			{
+			//print("Found transform camera\n");
+			$currentCamera = $camera;
+			//print ("Model Panel: " + $currentModelPanel + "\nCamera: " + $currentCamera + "\n");
+
+          	        string $i[] = `listConnections -type imagePlane $currentCamera`;
+	   	        if (size($i) > 0)
+            			{
+				$currentImagePlanes = $i;
+				//print("-Image Planes Found-\n");
+				string $j;
+				//for ($j in $currentImagePlanes)
+				//print ("--" + $j + "\n");
+				return 1;
+           	    	    	}
+	   			else
+				{
+				//print("No image planes found for camera\n");
+				return 0;
+				}
+			}
+		}
+		 else
+		 {
+		 return 0;
+		 //print("No new camera found\n");
+		 }
+    }
+    else
+    {
+    return 0;
+    //print("No panel found, or wrong type\n");
+    }
+};
+
+global proc backtrackSliders(string $controlCamera)
+{
+string $ip[] = `listConnections -type imagePlane $controlCamera`;
+
+float $v[];
+$v[1] = `camera -q -horizontalPan $controlCamera`;
+$v[2] = `camera -q -verticalPan $controlCamera`;
+$v[3] = `camera -q -zoom $controlCamera`;
+if (size($ip) > 0)
+$v[4] = `getAttr ($ip[0] + ".alphaGain")`;
+
+floatSliderGrp -e -v $v[1] horizontalSlider;
+floatSliderGrp -e -v $v[2] verticalSlider;
+floatSliderGrp -e -v $v[3] zoomSlider;
+if (size($ip) > 0)
+floatSliderGrp -e -v $v[4] opacitySlider;
+};
+
+global proc moveImagePlaneStep(int $dir)
+{
+  	global string $currentCamera;
+  	global float $stepSize;
+	float $change;
+	
+	$gco = getCurrentOperators();
+	if ($gco == 1)
+		{
+		if (`camera -q -panZoomEnabled $currentCamera` == 0)
+		camera -e -panZoomEnabled 1 $currentCamera;
+
+		if ($dir == 0)
+			{
+			$change = `camera -q -verticalPan $currentCamera` + $stepSize;
+			camera -e -verticalPan $change $currentCamera;
+			}
+
+		if ($dir == 1)
+			{
+			$change = `camera -q -verticalPan $currentCamera` - $stepSize;
+			camera -e -verticalPan $change $currentCamera;
+			}
+
+		if ($dir == 2)
+			{
+			$change = `camera -q -horizontalPan $currentCamera` - $stepSize;
+			camera -e -horizontalPan $change $currentCamera;
+			}
+
+		if ($dir == 3)
+			{
+			$change = `camera -q -horizontalPan $currentCamera` + $stepSize;
+			camera -e -horizontalPan $change $currentCamera;
+			}
+
+		if ($dir == 4)
+			{
+			$change = `camera -q -zoom $currentCamera` - $stepSize;
+			if ($change > .01)
+			camera -e -zoom $change $currentCamera;
+			else
+			camera -e -zoom .01 $currentCamera;
+			}
+
+		if ($dir == 5)
+			{
+			$change = `camera -q -zoom $currentCamera` + $stepSize;
+			camera -e -zoom $change $currentCamera;
+			}
+		backtrackSliders($currentCamera);
+		}
+};
+
+global proc moveImagePlaneSlider(int $dir)
+{
+	global string $currentCamera;
+	
+	int $gco;
+	$gco = getCurrentOperators();
+	
+	if ($gco = 1)
+		{
+		if ($dir == 0)
+			{
+			float $v = `floatSliderGrp -q -v horizontalSlider`;
+			camera -e -horizontalPan $v $currentCamera;
+			}
+		if ($dir == 1)
+			{
+			float $v = `floatSliderGrp -q -v verticalSlider`;
+			camera -e -verticalPan $v $currentCamera;
+			}
+		if ($dir == 2)
+			{
+			float $v = `floatSliderGrp -q -v zoomSlider`;
+			camera -e -zoom $v $currentCamera;
+			}
+		}
+};
+
+global proc resetImagePlaneValue(int $dir)
+{
+//0 = Horizontal
+//1 = Vertical
+//2 = Zoom
+//3 = All of the above
+//4 = All of the above + opacity
+
+	global string $currentCamera;
+	global string $currentImagePlanes[];
+
+	int $gco;
+	$gco = getCurrentOperators();
+	
+	if ($gco = 1)
+		{
+		if ($dir == 0)
+			{
+			camera -e -horizontalPan 0 $currentCamera;
+			}
+		if ($dir == 1)
+			{
+			camera -e -verticalPan 0 $currentCamera;
+			}
+		if ($dir == 2)
+			{
+			camera -e -zoom 1 $currentCamera;
+			}
+		if ($dir == 3)
+			{
+			camera -e -horizontalPan 0 $currentCamera;
+			camera -e -verticalPan 0 $currentCamera;
+			camera -e -zoom 1 $currentCamera;
+			}
+		if ($dir == 4)
+			{
+			camera -e -horizontalPan 0 $currentCamera;
+			camera -e -verticalPan 0 $currentCamera;
+			camera -e -zoom 1 $currentCamera;
+
+			string $i;
+			for ($i in $currentImagePlanes)
+				{
+			      if (`objExists $i`)
+				setAttr ($i + ".alphaGain") 1;
+				}
+			}
+		backtrackSliders($currentCamera);
+		}
+};
+
+global proc setImagePlaneOpacity(float $val)
+{
+	global string $currentImagePlanes[];
+	int $gco;
+	$gco = getCurrentOperators();
+	
+	if ($gco = 1)
+		{
+		string $i;
+		for ($i in $currentImagePlanes)
+			{
+		       if (`objExists $i`)
+			setAttr ($i + ".alphaGain") $val;
+			}
+		}
+};
+
+global proc opacitySliderUpdate()
+{
+	float $val = `floatSliderGrp -q -v opacitySlider`;
+	setImagePlaneOpacity($val);
+};
+
+iplaner();
